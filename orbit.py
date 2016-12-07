@@ -752,7 +752,7 @@ def kepler_vector(Manom, e):
                 print Manom[ind], Eanom[ind], e, '> 1e2 iter.'
                 Eanom = kepler_mikkola_vector(Manom, e)
         else:
-            Eanom = kepler_mikkola_vector(Manom, e)
+            Eanom = kepler_mikkola_vector(Manom, e) # Send it to the analytical version, this has not happened yet...
 
     return Eanom
 
@@ -769,15 +769,15 @@ def kepler_scalar(Manom, e):
             Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
             Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
 
+            diff = (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
             niter = 0
-            diff = 1.0
             while ((np.abs(diff) >= 1e-9) and (niter <= 1e2)):
-                diff = (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
                 Eanom -= diff
+                diff = (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
                 niter += 1
             if niter >= 1e2:
                 print Manom, Eanom, e, '> 1e2 iter.'
-                Eanom = kepler_mikkola_scalar(Manom, e) #Send it to the more advanced version
+                Eanom = kepler_mikkola_scalar(Manom, e) # Send it to the analytical version, this has not happened yet...
         else:
             Eanom = kepler_mikkola_scalar(Manom, e)
 
