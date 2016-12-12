@@ -517,16 +517,16 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
                     this_vrest = 0.0
 
                 x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs_one, rtheta=True, rvs=True, plx = plx[ind[j]], q = this_q, vrest = this_vrest)
-                ax1.plot(x, y, color='#0082ff', linewidth=2, alpha = 0.05)
+                ax1.plot(x, y, color='#0082ff', linewidth=2, alpha = 0.10)
 
                 plot_epochs_yrs = jd2year(plot_epochs, mjd = True)
                 date_ind = np.where((plot_epochs_yrs >= date_range[0]) & (plot_epochs_yrs <= date_range[1]))
                 x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs, rtheta=True, rvs=True, plx = plx[ind[j]], q = this_q, vrest = this_vrest)
-                ax2.plot(plot_epochs_yrs[date_ind], x[date_ind], color='#0082ff', linewidth=2, alpha = 0.05)
-                ax3.plot(plot_epochs_yrs[date_ind], y[date_ind], color='#0082ff', linewidth=2, alpha = 0.05)
-                ax4.plot(plot_epochs_yrs[date_ind], r[date_ind], color='#0082ff', linewidth=2, alpha = 0.05)
-                ax5.plot(plot_epochs_yrs[date_ind], t[date_ind]*rd, color='#0082ff', linewidth=2, alpha = 0.05)
-                ax6.plot(plot_epochs_yrs[date_ind], va[date_ind], color='#0082ff', linewidth=2, alpha = 0.05)
+                ax2.plot(plot_epochs_yrs[date_ind], x[date_ind], color='#0082ff', linewidth=2, alpha = 0.10)
+                ax3.plot(plot_epochs_yrs[date_ind], y[date_ind], color='#0082ff', linewidth=2, alpha = 0.10)
+                ax4.plot(plot_epochs_yrs[date_ind], r[date_ind], color='#0082ff', linewidth=2, alpha = 0.10)
+                ax5.plot(plot_epochs_yrs[date_ind], t[date_ind]*rd, color='#0082ff', linewidth=2, alpha = 0.10)
+                ax6.plot(plot_epochs_yrs[date_ind], va[date_ind], color='#0082ff', linewidth=2, alpha = 0.10)
                 
             if rho_theta is True:
                 dx = rho * np.sin(theta)
