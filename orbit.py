@@ -145,10 +145,10 @@ def run_emcee(data_file, star_plx, star_mass, mjd = True, rho_theta = True, rv_a
 
     if pos0 is False:
         #Now to intialize the starting array
-        multiplier = -1
+        multiplier = -4
         n_okay = 0
         while n_okay < (ntemps * nwalkers):
-            multiplier += 2
+            multiplier += 5
             if rv_a is True:
                 ndim = 10
                 pos0 = np.zeros((ntemps * nwalkers * multiplier, ndim), dtype = np.float64)
@@ -205,15 +205,11 @@ def run_emcee(data_file, star_plx, star_mass, mjd = True, rho_theta = True, rv_a
                 P = np.sqrt(((a * (1000.0/pos0[:,6]))**3.0)/pos0[:,7])
                 T0 = (pos0[:,5]*(P*365.25))+epochs[0]
 
-                okay = np.zeros((ntemps * nwalkers * multiplier), dtype=int)
-                okay[:] = 1
-                for i in xrange(0, ntemps * nwalkers * multiplier):
-                    x, y, r, t, va, vb = elements_to_xy(P[i], a[i], np.arccos(pos0[i,1]), pos0[i,2], pos0[i,3], pos0[i,4], T0[i], u_limits[:,0], rtheta = True, rvs = False, plx = pos0[i,6], sumdiff = sumdiff)
-                    if True in (r > u_limits[:,1]):
-                        okay[i] = 0
+                x, y, r, t, va, vb = elements_to_xy(P, a, np.arccos(pos0[:, 1]), pos0[:, 2], pos0[:, 3], pos0[:, 4], T0, u_limits[:,0], rtheta = True, rvs = False, plx = pos0[:, 6], sumdiff = sumdiff)
+                okay = np.product(r < np.tile(u_limits[:, 1], (len(x), 1)), axis = 1)
 
                 n_okay = np.sum(okay)
-                ind = np.where(okay == 1)[0]
+                ind = np.where(okay)[0]
                 if multiplier == 1:
                     print 'Generating acceptable starting positions'
                 print np.shape(ind), np.shape(ind[0:ntemps*nwalkers])
@@ -349,6 +345,9 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
         if rv_a is True:
             q = samples[:,:,8]
             vrest = samples[:,:,9]
+        else:
+            q = np.full(np.shape(a), 1.0)
+            vrest = np.full(np.shape(a), 0.0)
 
         if sumdiff is False:
             w = (samples[:,:,3] * rd) % 360.0
@@ -361,6 +360,8 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
             tau = np.tile(tau, (2,1))
             plx = np.tile(plx, (2,1))
             M = np.tile(M, (2,1))
+            q = np.tile(q, (2,1))
+            vrest = np.tile(vrest, (2,1))
 
             plus = (samples[:, :, 3] * rd) % 360.0
             minus = (samples[:, :, 4] * rd) % 360.0
@@ -512,6 +513,7 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
 
             #Re-shape arrays
             a = a[:,nburn::].flatten()
+            a_au = a_au[:, nburn::].flatten()
             e = e[:,nburn::].flatten()
             i = i[:,nburn::].flatten()
             w = w[:,nburn::].flatten()
@@ -523,32 +525,46 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
             P = P[:,nburn::].flatten()
             T0 = T0[:,nburn::].flatten()
             T0_year = T0_year[:,nburn::].flatten()
+            q = q[:,nburn::].flatten()
+            vrest = vrest[:,nburn::].flatten()
+
+            # Amongst lowest-temperature walkers, find the lowest-chi2
+            x, y, r, t, va, vb = elements_to_xy(P, a, i*dr, e, w*dr, o*dr, T0, epochs, rtheta=True, rvs=True, plx = plx, q = q, vrest = vrest)
+
+            if rho_theta is True:                
+                d_theta = np.arctan2(np.sin(np.tile(theta, (len(x), 1)) - t), np.cos(np.tile(theta, (len(x), 1)) - t))
+                chi2 = np.sum(((np.tile(rho, (len(x), 1)) - r)/np.tile(rho_err, (len(x), 1)))**2.0, axis = 1)
+                chi2 += np.sum((d_theta/np.tile(theta_err, (len(x), 1)))**2.0, axis = 1)
+            else:
+                chi2  = np.sum(((np.tile(dx, (len(x), 1)) - x)/np.tile(dx_err, (len(x), 1)))**2.0, axis = 1)
+                chi2 += np.sum(((np.tile(dy, (len(x), 1)) - y)/np.tile(dy_err, (len(x), 1)))**2.0, axis = 1)
 
             if rv_a is True:
-                q = q[:,nburn::].flatten()
-                vrest = vrest[:,nburn::].flatten()
+                chi2 += np.sum(((va_obs - va)/va_obs_err)**2.0, axis = 1)
+
+            min_ind = np.nanargmin(chi2)
+            print 'chi2_min ({:10.4f}):\nP = {:10.4f} (yrs)\na = {:10.4f} (asec)\na = {:10.4f} (au)\ni = {:10.4f} (deg)\ne = {:10.4f}\nw = {:10.4f} (deg)\no = {:10.4f} (deg)\nT0= {:10.4f} (mjd)'.format(chi2[min_ind], P[min_ind], a[min_ind], a_au[min_ind], i[min_ind], e[min_ind], w[min_ind], o[min_ind], T0[min_ind], )
+            ax1.annotate(r'$\chi^2_{{\rm min}}$ = {:.3f}, $P$ = {:.2f} (yrs), $a$ = {:.4f} (asec), $a$ = {:.2f} (au), $i$ = {:.2f} (deg), $e$ = {:.4f}, $\omega$ = {:.2f} (deg), $\Omega$ = {:.2f} (deg), $M_{{\rm tot}}$ = {:.2f} ($M_{{\odot}}$), $T_0$ = {:.1f}'.format(chi2[min_ind], P[min_ind], a[min_ind], a_au[min_ind], i[min_ind], e[min_ind], w[min_ind], o[min_ind], M[min_ind], T0[min_ind],), xy = (0.0, 1.03), xycoords = 'axes fraction', ha = 'left')
 
             #Sample lowest temperature walker 
             ind = np.random.randint(len(P), size = 100)
+
+            if u_limits is not False:
+                u_limits_yrs = jd2year(u_limits[:,0], mjd = True)
+                ax4.plot(u_limits_yrs, u_limits[:,1], 'v', color='k', zorder=10, markersize=5)
 
             if date_range is False:
                 date_range = [np.floor(np.min(jd2year(epochs, mjd = True))-1.0), np.ceil(np.max(jd2year(epochs, mjd = True))+3.0)]
 
                 if u_limits is not False:
-                    u_limits_yrs = jd2year(u_limits[:,0], mjd = True)
-                    ax4.plot(u_limits_yrs, u_limits[:,1], 'v', color='k', zorder=10, markersize=5)
-
                     if np.min(u_limits_yrs) < date_range[0]:
                         date_range = [np.floor(np.min(u_limits_yrs) - 1.0), date_range[1]]
                     if np.max(u_limits_yrs) > date_range[1]:
                         date_range = [date_range[0], np.ceil(np.max(u_limits_yrs)+3.0)]
-
                 
             for j in xrange(0, len(ind)):
-
                 #One complete orbit for x,y plot
                 plot_epochs_one = (np.arange(-0.5, 0.5, 0.001)*P[ind[j]]*365.25)+epochs[0]
-
                 #Conditional statement if we are sampling more than one orbit
                 if (year2jd(date_range[1], mjd = True) - year2jd(date_range[0], mjd = True)) > (P[ind[j]]*365.25):
                     plot_epochs = np.linspace(year2jd(date_range[0], mjd = True), year2jd(date_range[1], mjd = True), num=2000)
@@ -556,14 +572,6 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
                     plot_epochs = plot_epochs_one
 
                 plot_epochs_yrs = jd2year(plot_epochs_one, mjd = True)
-
-                if rv_a is True:
-                    this_q = q[ind[j]]
-                    this_vrest = vrest[ind[j]]
-                else:
-                    this_q = 1.0
-                    this_vrest = 0.0
-
 
                 if ephems is not False:
                     if j == 0:
@@ -574,7 +582,7 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
                     
                     #Loop over mjds and print median, 1sigma ranges for rho, theta, dx, dy
                     for k in xrange(0, len(ephems)):
-                        x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], ephems[k], rtheta=True, rvs=True, plx = plx[ind[j]], q = this_q, vrest = this_vrest)
+                        x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], ephems[k], rtheta=True, rvs=True, plx = plx[ind[j]], q = q[ind[j]], vrest = vrest[ind[j]])
                         ephem_rho[k,j] = r
                         ephem_theta[k,j] = t * rd
                         ephem_dx[k,j] = x
@@ -583,22 +591,44 @@ def plot_orbit(data_file, object_name, nwalkers, mjd = True, rho_theta = True, r
                         if j == 0:
                             print ephem_rho[k,j], ephem_theta[k,j], ephem_dx[k, j], ephem_dy[k,j]
 
-                x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs_one, rtheta=True, rvs=True, plx = plx[ind[j]], q = this_q, vrest = this_vrest)
-                ax1.plot(x, y, color='#0082ff', linewidth=1.5, alpha = 0.10)
+                x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs_one, rtheta=True, rvs=True, plx = plx[ind[j]], q = q[ind[j]], vrest = vrest[ind[j]])
+                ax1.plot(x, y, color='#0082ff', linewidth=1.00, alpha = 0.10)
 
                 plot_epochs_yrs = jd2year(plot_epochs, mjd = True)
                 date_ind = np.where((plot_epochs_yrs >= date_range[0]) & (plot_epochs_yrs <= date_range[1]))
-                x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs, rtheta=True, rvs=True, plx = plx[ind[j]], q = this_q, vrest = this_vrest)
-                ax2.plot(plot_epochs_yrs[date_ind], x[date_ind], color='#0082ff', linewidth=1.5, alpha = 0.10)
-                ax3.plot(plot_epochs_yrs[date_ind], y[date_ind], color='#0082ff', linewidth=1.5, alpha = 0.10)
-                ax4.plot(plot_epochs_yrs[date_ind], r[date_ind], color='#0082ff', linewidth=1.5, alpha = 0.10)
-                ax5.plot(plot_epochs_yrs[date_ind], t[date_ind]*rd, color='#0082ff', linewidth=1.5, alpha = 0.10)
-                ax6.plot(plot_epochs_yrs[date_ind], va[date_ind], color='#0082ff', linewidth=1.5, alpha = 0.10)
-               
+                x, y, r, t, va, vb = elements_to_xy(P[ind[j]], a[ind[j]], i[ind[j]]*dr, e[ind[j]], w[ind[j]]*dr, o[ind[j]]*dr, T0[ind[j]], plot_epochs, rtheta=True, rvs=True, plx = plx[ind[j]], q = q[ind[j]], vrest = vrest[ind[j]])
+                ax2.plot(plot_epochs_yrs[date_ind], x[date_ind], color='#0082ff', linewidth=1.00, alpha = 0.10)
+                ax3.plot(plot_epochs_yrs[date_ind], y[date_ind], color='#0082ff', linewidth=1.00, alpha = 0.10)
+                ax4.plot(plot_epochs_yrs[date_ind], r[date_ind], color='#0082ff', linewidth=1.00, alpha = 0.10)
+                ax5.plot(plot_epochs_yrs[date_ind], t[date_ind]*rd, color='#0082ff', linewidth=1.00, alpha = 0.10)
+                ax6.plot(plot_epochs_yrs[date_ind], va[date_ind], color='#0082ff', linewidth=1.00, alpha = 0.10)
+
+            #Overplot lowest chi2 orbit
+            plot_epochs_one = (np.arange(-0.5, 0.5, 0.001)*P[min_ind]*365.25)+epochs[0]
+            #Conditional statement if we are sampling more than one orbit
+            if (year2jd(date_range[1], mjd = True) - year2jd(date_range[0], mjd = True)) > (P[min_ind]*365.25):
+                plot_epochs = np.linspace(year2jd(date_range[0], mjd = True), year2jd(date_range[1], mjd = True), num=2000)
+            else:
+                plot_epochs = plot_epochs_one
+
+            x, y, r, t, va, vb = elements_to_xy(P[min_ind], a[min_ind], i[min_ind]*dr, e[min_ind], w[min_ind]*dr, o[min_ind]*dr, T0[min_ind], plot_epochs_one, rtheta=True, rvs=True, plx = plx[min_ind], q = q[min_ind], vrest = vrest[min_ind])            
+            ax1.plot(x, y, color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+            
+            plot_epochs_yrs = jd2year(plot_epochs, mjd = True)
+            date_ind = np.where((plot_epochs_yrs >= date_range[0]) & (plot_epochs_yrs <= date_range[1]))
+            x, y, r, t, va, vb = elements_to_xy(P[min_ind], a[min_ind], i[min_ind]*dr, e[min_ind], w[min_ind]*dr, o[min_ind]*dr, T0[min_ind], plot_epochs, rtheta=True, rvs=True, plx = plx[min_ind], q = q[min_ind], vrest = vrest[min_ind])
+            
+            ax2.plot(plot_epochs_yrs[date_ind], x[date_ind], color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+            ax3.plot(plot_epochs_yrs[date_ind], y[date_ind], color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+            ax4.plot(plot_epochs_yrs[date_ind], r[date_ind], color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+            ax5.plot(plot_epochs_yrs[date_ind], t[date_ind]*rd, color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+            ax6.plot(plot_epochs_yrs[date_ind], va[date_ind], color='salmon', linewidth=1.25, alpha = 1.0, zorder = 5)
+
+            # Add title to plot containing minimum chi2
+
             if ephems is not False:
                 for k in xrange(0, len(ephems)):
                     print 'MJD = %10.2f, rho = %6.4f +- %6.4f, theta = %5.3f +- %5.3f, dx = %6.4f +- %6.4f, dy = %6.4f +- %6.4f' % (ephems[k], np.nanmedian(ephem_rho[k,:]), np.nanstd(ephem_rho[k,:]), np.nanmedian(ephem_theta[k,:]), np.nanstd(ephem_theta[k,:]), np.nanmedian(ephem_dx[k,:]), np.nanstd(ephem_dx[k,:]), np.nanmedian(ephem_dy[k,:]), np.nanstd(ephem_dy[k,:]))
-
 
             if rho_theta is True:
                 dx = rho * np.sin(theta)
@@ -735,18 +765,53 @@ def elements_to_xy(P,a,i,e,w,o,T0,epochs, rtheta = False, rvs = False, plx = 0.0
     #vrest = rest velocity in KM/s
     #sumdiff - if set, w = (Omega + omega), o = (Omega - omega)
 
+    # Three cases;
+    #   A - One set of elements, and one epoch
+    #   B - One set of elements, and multiple epochs
+    #   C - Multiple elements, and one/series of epochs
+
+
+    multi_orbit =  hasattr(P, '__len__')
+
+    if multi_orbit:
+        # Case 2
+        n_orbits = len(P)
+        n_epochs = len(epochs)
+        P = np.transpose(np.tile(P, (n_epochs, 1)))
+        a = np.transpose(np.tile(a, (n_epochs, 1)))
+        i = np.transpose(np.tile(i, (n_epochs, 1)))
+        e = np.transpose(np.tile(e, (n_epochs, 1)))
+        w = np.transpose(np.tile(w, (n_epochs, 1)))
+        o = np.transpose(np.tile(o, (n_epochs, 1)))
+        T0 = np.transpose(np.tile(T0, (n_epochs, 1)))
+        epochs = np.tile(epochs, (n_orbits, 1))
+
+        if hasattr(plx, '__len__'):
+            plx = np.transpose(np.tile(plx, (n_epochs, 1)))
+        else:
+            plx = np.full(np.shape(P), plx)
+
+        if rvs is True:
+            if hasattr(q, '__len__'):
+                q = np.transpose(np.tile(q, (n_epochs, 1)))
+            else:
+                q = np.full(np.shape(P), q)
+
+            if hasattr(vrest, '__len__'):
+                vrest = np.transpose(np.tile(vrest, (n_epochs, 1)))
+            else:
+                vrest = np.full(np.shape(P), vrest)
+
     Pdays = P * 365.25
     Tperi = (epochs - T0) % Pdays
     Manom = (2.0 * np.pi) * (Tperi/Pdays)
 
-    if hasattr(Manom, '__len__'):
-        n = len(Manom)
+    if hasattr(Manom, '__len__') or multi_orbit:
         Eanom = kepler_vector(Manom, e)
         Tanom = np.arccos((np.cos(Eanom) - e) / (1.0 - (e * np.cos(Eanom))))
         ind = np.where(Eanom > np.pi)
         Tanom[ind] = (2.0 * np.pi) - Tanom[ind]
     else:
-        n = 1
         Eanom = kepler_scalar(Manom, e)
         Tanom = np.arccos((np.cos(Eanom) - e) / (1.0 - (e * np.cos(Eanom))))
         if Eanom > np.pi:
@@ -772,7 +837,7 @@ def elements_to_xy(P,a,i,e,w,o,T0,epochs, rtheta = False, rvs = False, plx = 0.0
         #Wrap theta
         t = (t + (1.5 * np.pi)) % (2.0 * np.pi)
     else:
-        r, t = np.zeros(n), np.zeros(n)
+        r, t = False, False
 
     if rvs:
         #We know total mass
@@ -793,7 +858,7 @@ def elements_to_xy(P,a,i,e,w,o,T0,epochs, rtheta = False, rvs = False, plx = 0.0
         va = ( ka * ((e * np.cos(w)) + np.cos(Tanom + w))) + vrest
         vb = (-kb * ((e * np.cos(w)) + np.cos(Tanom + w))) + vrest
     else:
-        va, vb = np.zeros(n), np.zeros(n)
+        va, vb = False, False
 
     return x, y, r, t, va, vb
 
@@ -801,32 +866,68 @@ def kepler_vector(Manom, e):
     #Solves Kepler's equation on a vector of mean anomalies
     #e < 0.95 use Newton
     #e >= 0.95 use Mikkola
-    if e == 0.0:
-        return np.copy(Manom)
 
-    if e < 0.95:
-        Eanom = np.copy(Manom)
-        Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
-        Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
+    if hasattr(e, '__len__'):
+        Eanom = np.full(np.shape(Manom), np.nan)
+        ind_zero = np.where(e == 0.0)
+        Eanom[ind_zero] = Manom[ind_zero]
 
-        diff = (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
-        abs_diff = np.fabs(diff)
+        ind_low = np.where(e < 0.95)
+        if len(ind_low[0]) > 0:
+            Eanom_sub = np.copy(Manom[ind_low])
+            Manom_sub = np.copy(Manom[ind_low])
+            e_sub = e[ind_low]
 
-        niter = 0
-        while True:
-            ind = np.where(abs_diff > 1e-9)
-            if ind[0].size == 0:
-                break
-            Eanom[ind] -= diff[ind]
-            diff[ind] = (Eanom[ind] - (e * np.sin(Eanom[ind])) - Manom[ind]) / (1.0 - (e * np.cos(Eanom[ind])))
-            abs_diff[ind] = np.fabs(diff[ind])
-            if niter == 100:
-                print Manom[ind], Eanom[ind], e, '> 100 iter.'
-                Eanom = kepler_mikkola_vector(Manom, e) # Send it to the analytical version, this has not happened yet...
-                break
-            niter += 1
+            diff = (Eanom_sub - (e_sub * np.sin(Eanom_sub)) - Manom_sub) / (1.0 - (e_sub * np.cos(Eanom_sub)))
+            abs_diff = np.fabs(diff)
+
+            niter = 0
+            while True:
+                ind = np.where(abs_diff > 1e-9)
+                if ind[0].size == 0:
+                    break
+                Eanom_sub[ind] -= diff[ind]
+                diff[ind] = (Eanom_sub[ind] - (e_sub[ind] * np.sin(Eanom_sub[ind])) - Manom_sub[ind]) / (1.0 - (e_sub[ind] * np.cos(Eanom_sub[ind])))
+                abs_diff[ind] = np.fabs(diff[ind])
+                if niter == 100:
+                    print Manom_sub[ind], Eanom_sub[ind], e_sub[ind], '> 100 iter.'
+                    Eanom_sub[ind] = kepler_mikkola_vector(Manom_sub[ind], e_sub[ind]) # Send it to the analytical version, this has not happened yet...
+                    break
+                niter += 1
+
+            Eanom[ind_low] = Eanom_sub
+
+        ind_high = np.where(e >= 0.95)
+        if len(ind_high[0]) > 0:
+            Eanom[ind_high] = kepler_mikkola_vector(Manom[ind_high], e[ind_high])
     else:
-        Eanom = kepler_mikkola_vector(Manom, e)
+
+        if e == 0.0:
+            return np.copy(Manom)
+
+        if e < 0.95:
+            Eanom = np.copy(Manom)
+            Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
+            Eanom -= (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
+
+            diff = (Eanom - (e * np.sin(Eanom)) - Manom) / (1.0 - (e * np.cos(Eanom)))
+            abs_diff = np.fabs(diff)
+
+            niter = 0
+            while True:
+                ind = np.where(abs_diff > 1e-9)
+                if ind[0].size == 0:
+                    break
+                Eanom[ind] -= diff[ind]
+                diff[ind] = (Eanom[ind] - (e * np.sin(Eanom[ind])) - Manom[ind]) / (1.0 - (e * np.cos(Eanom[ind])))
+                abs_diff[ind] = np.fabs(diff[ind])
+                if niter == 100:
+                    print Manom[ind], Eanom[ind], e, '> 100 iter.'
+                    Eanom[ind] = kepler_mikkola_vector(Manom[ind], e) # Send it to the analytical version, this has not happened yet...
+                    break
+                niter += 1
+        else:
+            Eanom = kepler_mikkola_vector(Manom, e)
 
     return Eanom
 
